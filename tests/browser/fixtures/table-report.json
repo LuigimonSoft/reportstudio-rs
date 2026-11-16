@@ -1,0 +1,151 @@
+{
+  "version": 1,
+  "schemaVersion": 1,
+  "datasets": [
+    {
+      "id": "details",
+      "name": "Details",
+      "schema": {
+        "fields": [
+          {
+            "name": "description",
+            "type": "text"
+          }
+        ]
+      },
+      "data": []
+    }
+  ],
+  "report": {
+    "version": 1,
+    "id": "simple-example",
+    "title": "Simple example",
+    "locale": "en-US",
+    "currency": "USD",
+    "page": {
+      "width": 8.5,
+      "height": 11,
+      "margins": {
+        "top": 0.5,
+        "bottom": 0.5,
+        "left": 0.5,
+        "right": 0.5
+      }
+    },
+    "header": {
+      "id": "header",
+      "name": "Header",
+      "height": 0.5,
+      "elements": [
+        {
+          "id": "title",
+          "type": "text",
+          "x": 0,
+          "y": 0,
+          "width": 4,
+          "height": 0.3,
+          "text": "Simple report",
+          "style": {
+            "fontsize": 16,
+            "bold": true,
+            "italic": false,
+            "align": "left",
+            "color": "#17213a",
+            "wrap": false,
+            "format": "text"
+          },
+          "src": ""
+        }
+      ]
+    },
+    "details": [
+      {
+        "id": "detail",
+        "dataset": "details",
+        "band": {
+          "id": "detail-band",
+          "name": "Details",
+          "height": 0.3,
+          "elements": [
+            {
+              "id": "table-reference-0:0-background",
+              "type": "box",
+              "x": 0,
+              "y": 0.1,
+              "width": 1.7,
+              "height": 0.3,
+              "text": "Text",
+              "src": "",
+              "groupId": "table-reference",
+              "table": {
+                "dataset": "details",
+                "rows": 1,
+                "columns": 1,
+                "headers": false,
+                "width": 1.7,
+                "rowHeight": 0.3,
+                "styles": {},
+                "contents": {
+                  "0:0": "[description]"
+                }
+              },
+              "cell": {
+                "row": 0,
+                "column": 0
+              },
+              "borderColor": "#cbd5e1",
+              "borderWidth": 0.5,
+              "style": {
+                "fontsize": 10,
+                "bold": false,
+                "italic": false,
+                "align": "left",
+                "color": "#ffffff",
+                "wrap": true,
+                "format": "text"
+              }
+            },
+            {
+              "id": "table-reference-0:0-text",
+              "type": "text",
+              "x": 0.04,
+              "y": 0.13,
+              "width": 1.6199999999999999,
+              "height": 0.24,
+              "text": "[description]",
+              "src": "",
+              "groupId": "table-reference",
+              "table": {
+                "dataset": "details",
+                "rows": 1,
+                "columns": 1,
+                "headers": false,
+                "width": 1.7,
+                "rowHeight": 0.3,
+                "styles": {},
+                "contents": {
+                  "0:0": "[description]"
+                }
+              },
+              "cell": {
+                "row": 0,
+                "column": 0
+              },
+              "style": {
+                "fontsize": 10,
+                "bold": false,
+                "italic": false,
+                "align": "left",
+                "color": "#243c34",
+                "wrap": true,
+                "format": "text",
+                "underline": false,
+                "verticalAlign": "top"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

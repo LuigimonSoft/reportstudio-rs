@@ -1,0 +1,17 @@
+[package]
+name = "reportstudio"
+version = "0.1.0"
+edition = "2021"
+description = "Generate PDFs from Report Studio report definitions"
+license = "MIT"
+
+[dependencies]
+serde_json = "1"
+
+[dev-dependencies]
+cucumber = "0.23.0"
+futures = "0.3"
+
+[[test]]
+name = "bdd"
+harness = false

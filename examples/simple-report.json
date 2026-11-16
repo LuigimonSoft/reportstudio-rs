@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "schemaVersion": 1,
+  "datasets": [{"id":"details", "name":"Details", "schema":{"fields":[{"name":"description","type":"text"}]}, "data":[]}],
+  "report": {
+    "version": 1,
+    "id": "simple-example",
+    "title": "Simple example",
+    "locale": "en-US",
+    "currency": "USD",
+    "page": {"width": 8.5, "height": 11, "margins": {"top": 0.5, "bottom": 0.5, "left": 0.5, "right": 0.5}},
+    "header": {"id":"header","name":"Header","height":0.5,"elements":[{"id":"title","type":"text","x":0,"y":0,"width":4,"height":0.3,"text":"Simple report","style":{"fontsize":16,"bold":true,"color":"#17213a"}}]},
+    "details": [{"id":"detail","dataset":"details","band":{"id":"detail-band","name":"Details","height":0.3,"elements":[{"id":"description","type":"text","x":0,"y":0,"width":4,"height":0.2,"text":"[description]","style":{"fontsize":10,"color":"#17213a"}}]}}]
+  }
+}
