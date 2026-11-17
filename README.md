@@ -33,7 +33,7 @@ The renderer is under active development. It supports the features described bel
 The diagram describes responsibilities around the library. The caller can be a desktop application, a web service, a command-line tool, or another Rust program.
 
 ```mermaid
-flowchart LR
+flowchart TD
     Designer[Report designer]
     App[Calling application]
     Source[(Application data source)]
@@ -54,7 +54,7 @@ flowchart LR
 Typical use cases are shown below. Rectangles represent use cases; the two external participants are the report designer and the application developer.
 
 ```mermaid
-flowchart LR
+flowchart TD
     Designer([Report designer])
     Developer([Application developer])
     subgraph Studio[Report Studio]
