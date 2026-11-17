@@ -45,3 +45,26 @@ Feature: Generate a report PDF
     And a details table with two records
     When I generate the PDF
     Then the PDF contains both detail records
+
+  Scenario: Apply numeric and date formats
+    Given a report with formatted numeric and date fields
+    And the report's numeric data
+    When I generate the PDF
+    Then the PDF contains the formatted values
+
+  Scenario: Generate an air waybill using related tables
+    Given the air waybill example and its data tables
+    When I generate the PDF
+    Then the PDF contains its linked parties and merchandise
+
+  Scenario: Generate page and report footers
+    Given a report with page and report footers
+    And a details table with two records
+    When I generate the PDF
+    Then the PDF contains the page number and report footer
+
+  Scenario: Render Unicode characters using an embedded font
+    Given a report with a Japanese heading
+    And a details table with two records
+    When I generate the PDF
+    Then the PDF includes an embedded Unicode font and mapping

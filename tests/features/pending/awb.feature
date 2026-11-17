@@ -1,7 +1,7 @@
 @pending
-Feature: Generate an air waybill
-  Scenario: Render a complete AWB with related records and three goods rows
-    Given the populated air waybill example and its ten data tables
+Feature: Air waybill with overflowing merchandise
+  Scenario: Continue all merchandise rows onto subsequent pages
+    Given an air waybill with more merchandise than fits on one page
     When I generate the AWB PDF
-    Then the PDF contains the linked parties and the three goods descriptions
-    And the output matches the reference layout
+    Then every merchandise row appears exactly once
+    And the page headers and footers are placed correctly

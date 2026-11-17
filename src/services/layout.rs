@@ -2,13 +2,13 @@ use super::relations::{Relations, RowContext};
 use crate::repository::{build_pdf, Error, ReportData, Result};
 use serde_json::Value;
 
-fn number(v: &Value, key: &str) -> Result<f64> {
+pub(super) fn number(v: &Value, key: &str) -> Result<f64> {
     v.get(key)
         .and_then(Value::as_f64)
         .filter(|n| n.is_finite())
         .ok_or_else(|| Error::InvalidReport(format!("missing or invalid {key}")))
 }
-fn check_unused(value: &Value, key: &str) -> Result<()> {
+pub(super) fn check_unused(value: &Value, key: &str) -> Result<()> {
     if value.get(key).is_some_and(|v| {
         !v.is_null()
             && v != false
@@ -20,16 +20,26 @@ fn check_unused(value: &Value, key: &str) -> Result<()> {
     Ok(())
 }
 pub(super) fn render(root: &Value, data: &ReportData) -> Result<Vec<u8>> {
+    match render_single(root, data) {
+        Err(Error::Unsupported(reason))
+            if reason == "multi-page or overflowing report" || reason == "groupBy" =>
+        {
+            super::pagination::render(root, data)
+        }
+        result => result,
+    }
+}
+fn render_single(root: &Value, data: &ReportData) -> Result<Vec<u8>> {
     if root["version"] != 1 || root.get("schemaVersion").is_some_and(|v| v != 1) {
         return Err(Error::Unsupported("report schema version".into()));
     }
-    super::parameters::validate(root)?;
+    let filtered = super::parameters::apply(root, data)?;
+    let data = &filtered;
     super::schema::validate(root, data)?;
     let relations = Relations::new(root, data)?;
     let report = root
         .get("report")
         .ok_or_else(|| Error::InvalidReport("missing report".into()))?;
-    check_unused(report, "formulas")?;
     let page = &report["page"];
     let width = number(page, "width")?;
     let height = number(page, "height")?;
@@ -54,6 +64,10 @@ pub(super) fn render(root: &Value, data: &ReportData) -> Result<Vec<u8>> {
     {
         return Err(Error::InvalidReport("invalid page margins".into()));
     }
+    let format = super::format::FormatContext {
+        locale: report["locale"].as_str().unwrap_or("en-US"),
+        currency: report["currency"].as_str().unwrap_or("USD"),
+    };
     let mut commands = String::new();
     let mut y = top;
     let default_context = relations.first_context()?;
@@ -62,12 +76,14 @@ pub(super) fn render(root: &Value, data: &ReportData) -> Result<Vec<u8>> {
             band(
                 section,
                 &relations,
+                format,
                 &default_context,
                 None,
                 false,
                 true,
                 &mut y,
                 left,
+                right,
                 width,
                 height,
                 bottom,
@@ -86,12 +102,14 @@ pub(super) fn render(root: &Value, data: &ReportData) -> Result<Vec<u8>> {
             band(
                 section,
                 &relations,
+                format,
                 &default_context,
                 None,
                 false,
                 true,
                 &mut y,
                 left,
+                right,
                 width,
                 height,
                 bottom,
@@ -103,12 +121,14 @@ pub(super) fn render(root: &Value, data: &ReportData) -> Result<Vec<u8>> {
             band(
                 &detail["band"],
                 &relations,
+                format,
                 &default_context,
                 None,
                 false,
                 true,
                 &mut y,
                 left,
+                right,
                 width,
                 height,
                 bottom,
@@ -120,17 +140,20 @@ pub(super) fn render(root: &Value, data: &ReportData) -> Result<Vec<u8>> {
                 .ok_or_else(|| Error::InvalidData(format!("missing table: {source}")))?;
             let mut rendered_rows = 0_usize;
             for index in 0..table.rows().len() {
-                for context in relations.contexts(source, index)? {
+                for mut context in relations.contexts(source, index)? {
                     rendered_rows += 1;
+                    context.row_number = Some(rendered_rows);
                     band(
                         &detail["band"],
                         &relations,
+                        format,
                         &context,
                         Some(source),
                         true,
                         rendered_rows == 1,
                         &mut y,
                         left,
+                        right,
                         width,
                         height,
                         bottom,
@@ -146,12 +169,14 @@ pub(super) fn render(root: &Value, data: &ReportData) -> Result<Vec<u8>> {
             band(
                 section,
                 &relations,
+                format,
                 &default_context,
-                None,
+                (!source.is_empty()).then_some(source),
                 false,
                 true,
                 &mut y,
                 left,
+                right,
                 width,
                 height,
                 bottom,
@@ -159,45 +184,111 @@ pub(super) fn render(root: &Value, data: &ReportData) -> Result<Vec<u8>> {
             )?;
         }
     }
-    for name in ["pageFooter", "footer"] {
-        if let Some(section) = report.get(name) {
-            if section["visible"] != false
-                && section["elements"]
-                    .as_array()
-                    .is_some_and(|elements| !elements.is_empty())
-            {
-                return Err(Error::Unsupported(
-                    "page and report footer placement".into(),
-                ));
-            }
-            band(
-                section,
-                &relations,
-                &default_context,
-                None,
-                false,
-                true,
-                &mut y,
-                left,
-                width,
-                height,
-                bottom,
-                &mut commands,
-            )?;
+    // On the final page the report footer ends at the bottom margin. The
+    // page footer sits immediately above it; unused leading space remains
+    // available for detail rows as in the designer.
+    let footer = report
+        .get("footer")
+        .filter(|section| section["visible"] != false);
+    let page_footer = report
+        .get("pageFooter")
+        .filter(|section| section["visible"] != false);
+    for section in [footer, page_footer].into_iter().flatten() {
+        check_unused(section, "sections")?;
+    }
+    let footer_height = footer
+        .map(|section| number(section, "height"))
+        .transpose()?
+        .unwrap_or(0.0);
+    let page_height = page_footer
+        .map(|section| number(section, "height"))
+        .transpose()?
+        .unwrap_or(0.0);
+    if footer_height < 0.0 || page_height < 0.0 {
+        return Err(Error::InvalidReport("negative footer height".into()));
+    }
+    let leading = if let Some(section) = page_footer {
+        let elements = section["elements"]
+            .as_array()
+            .ok_or_else(|| Error::InvalidReport("band has no elements array".into()))?;
+        if section.get("background").is_some_and(|v| !v.is_null())
+            || section
+                .get("backgroundExpression")
+                .is_some_and(|v| !v.is_null())
+        {
+            0.0
+        } else {
+            elements
+                .iter()
+                .filter(|element| element["visible"] != false)
+                .map(|element| number(element, "y"))
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+                .fold(page_height, f64::min)
+                .clamp(0.0, page_height)
         }
+    } else {
+        0.0
+    };
+    let footer_start = height - bottom - footer_height;
+    let page_footer_start = footer_start - page_height;
+    if page_footer_start + leading < top || y > page_footer_start + leading + 1e-9 {
+        return Err(Error::Unsupported(
+            "multi-page or overflowing report".into(),
+        ));
+    }
+    if let Some(section) = page_footer {
+        let mut footer_y = page_footer_start;
+        band(
+            section,
+            &relations,
+            format,
+            &default_context,
+            None,
+            false,
+            true,
+            &mut footer_y,
+            left,
+            right,
+            width,
+            height,
+            bottom,
+            &mut commands,
+        )?;
+    }
+    if let Some(section) = footer {
+        let mut footer_y = footer_start;
+        band(
+            section,
+            &relations,
+            format,
+            &default_context,
+            None,
+            false,
+            true,
+            &mut footer_y,
+            left,
+            right,
+            width,
+            height,
+            bottom,
+            &mut commands,
+        )?;
     }
     Ok(build_pdf(width * 72.0, height * 72.0, &commands))
 }
 #[allow(clippy::too_many_arguments)]
-fn band(
+pub(super) fn band(
     b: &Value,
     relations: &Relations<'_>,
+    format: super::format::FormatContext<'_>,
     context: &RowContext,
     table: Option<&str>,
     compact: bool,
     first_row: bool,
     y: &mut f64,
     left: f64,
+    right: f64,
     width: f64,
     height: f64,
     bottom: f64,
@@ -206,16 +297,23 @@ fn band(
     if b["visible"] == false {
         return Ok(());
     }
-    for key in [
-        "sections",
-        "visibilityExpression",
-        "background",
-        "backgroundExpression",
-        "pageBreakBefore",
-    ] {
-        check_unused(b, key)?;
+    if let Some(expression) = b["visibilityExpression"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        match super::expressions::evaluate(expression, relations, context, table)? {
+            crate::repository::DataValue::Boolean(true) => {}
+            crate::repository::DataValue::Boolean(false) => return Ok(()),
+            _ => {
+                return Err(Error::InvalidReport(
+                    "section visibility must return a boolean".into(),
+                ))
+            }
+        }
     }
-    let prepared = super::table::prepare(b, relations, context, table, compact, first_row)?;
+    check_unused(b, "pageBreakBefore")?;
+    let prepared = super::table::prepare(b, relations, format, context, table, compact, first_row)?;
     let declared_height = number(b, "height")?;
     let mut band_height = if compact { 0.15_f64 } else { declared_height };
     if compact {
@@ -228,7 +326,7 @@ fn band(
                 let raw = element["text"]
                     .as_str()
                     .ok_or_else(|| Error::InvalidReport("text is missing".into()))?;
-                let resolved = resolve(raw, relations, context, table)?;
+                let resolved = resolve(raw, relations, context, table, &element["style"], format)?;
                 element_height = super::text::required_height(
                     &resolved,
                     &element["style"],
@@ -245,8 +343,46 @@ fn band(
             "multi-page or overflowing report".into(),
         ));
     }
+    let background = if let Some(expression) = b["backgroundExpression"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        match super::expressions::evaluate(expression, relations, context, table)? {
+            crate::repository::DataValue::Text(color) => Some(color),
+            _ => {
+                return Err(Error::InvalidReport(
+                    "section background must return a color".into(),
+                ))
+            }
+        }
+    } else {
+        b.get("background")
+            .filter(|v| !v.is_null())
+            .map(|v| {
+                v.as_str()
+                    .map(str::to_owned)
+                    .ok_or_else(|| Error::InvalidReport("invalid section background".into()))
+            })
+            .transpose()?
+    };
+    if let Some(background) = background {
+        let (r, g, blue) = parse_color(&background)?;
+        out.push_str(&format!(
+            "q {:.4} {:.4} {:.4} rg {:.3} {:.3} {:.3} {:.3} re f Q\n",
+            f64::from(r) / 255.0,
+            f64::from(g) / 255.0,
+            f64::from(blue) / 255.0,
+            left * 72.0,
+            (height - *y - band_height) * 72.0,
+            (width - left - right) * 72.0,
+            band_height * 72.0
+        ));
+    }
     for e in &prepared.elements {
-        check_unused(e, "chart")?;
+        if e["type"] != "chart" {
+            check_unused(e, "chart")?;
+        }
         let x = number(e, "x")?;
         let ey = number(e, "y")?;
         let ew = number(e, "width")?;
@@ -304,13 +440,24 @@ fn band(
                 ));
                 continue;
             }
+            Some("chart") => {
+                super::chart::render(&e["chart"], relations, px, top, ew * 72.0, eh * 72.0, out)?;
+                continue;
+            }
+            Some("image") => {
+                let source = e["src"]
+                    .as_str()
+                    .ok_or_else(|| Error::InvalidReport("image source is missing".into()))?;
+                super::image::render(source, px, top, ew * 72.0, eh * 72.0, out)?;
+                continue;
+            }
             Some("text") => {}
             _ => return Err(Error::Unsupported(format!("element type {}", e["type"]))),
         }
         let value = e["text"]
             .as_str()
             .ok_or_else(|| Error::InvalidReport("text is missing".into()))?;
-        let rendered = resolve(value, relations, context, table)?;
+        let rendered = resolve(value, relations, context, table, style, format)?;
         let effective_height =
             super::text::required_height(&rendered, style, ew * 72.0, eh * 72.0)?;
         if ey + effective_height / 72.0 > band_height + 1e-9 {
@@ -332,9 +479,26 @@ fn band(
         )?;
     }
     *y += band_height;
+    if let Some(children) = b.get("sections").filter(|v| !v.is_null()) {
+        let children = children
+            .as_array()
+            .ok_or_else(|| Error::InvalidReport("sections must be an array".into()))?;
+        if !children.is_empty()
+            && (b.get("background").is_some_and(|v| !v.is_null())
+                || b.get("backgroundExpression").is_some_and(|v| !v.is_null()))
+        {
+            return Err(Error::Unsupported("background on nested section".into()));
+        }
+        for child in children {
+            band(
+                child, relations, format, context, table, false, first_row, y, left, right, width,
+                height, bottom, out,
+            )?;
+        }
+    }
     Ok(())
 }
-fn parse_color(color: &str) -> Result<(u8, u8, u8)> {
+pub(super) fn parse_color(color: &str) -> Result<(u8, u8, u8)> {
     if color.len() != 7
         || !color.starts_with('#')
         || !color[1..].bytes().all(|byte| byte.is_ascii_hexdigit())
@@ -352,6 +516,8 @@ pub(super) fn resolve(
     relations: &Relations<'_>,
     context: &RowContext,
     current: Option<&str>,
+    style: &Value,
+    format: super::format::FormatContext<'_>,
 ) -> Result<String> {
     let mut output = String::new();
     let mut rest = text;
@@ -362,18 +528,33 @@ pub(super) fn resolve(
             .find(']')
             .ok_or_else(|| Error::InvalidReport("unclosed field token".into()))?;
         let key = &after[..end];
-        let (table, field) = match key.split_once('.') {
-            Some((table, field)) => (table, field),
-            None => (
-                current.ok_or_else(|| {
-                    Error::Unsupported(format!("field outside detail row: {key}"))
-                })?,
-                key,
-            ),
-        };
-        if let Some(value) = relations.value(context, table, field)? {
-            output.push_str(&value.display());
+        if key == "ROW_NUMBER" {
+            let number = context
+                .row_number
+                .ok_or_else(|| Error::Unsupported("ROW_NUMBER outside detail row".into()))?;
+            output.push_str(&number.to_string());
+            rest = &after[end + 1..];
+            continue;
         }
+        if matches!(key, "PAGE_NUMBER" | "PAGE_COUNT") {
+            output.push_str(&super::format::value(
+                &crate::repository::DataValue::Integer(if key == "PAGE_NUMBER" {
+                    context.page_number
+                } else {
+                    context.page_count
+                } as i64),
+                style["format"].as_str().unwrap_or("text"),
+                format,
+            )?);
+            rest = &after[end + 1..];
+            continue;
+        }
+        let value = super::expressions::evaluate(key, relations, context, current)?;
+        output.push_str(&super::format::value(
+            &value,
+            style["format"].as_str().unwrap_or("text"),
+            format,
+        )?);
         rest = &after[end + 1..];
     }
     output.push_str(rest);

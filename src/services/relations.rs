@@ -13,14 +13,30 @@ struct Relation {
     from: Endpoint,
     to: Endpoint,
 }
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(super) struct RowContext {
     pub(super) rows: HashMap<String, usize>,
+    pub(super) row_number: Option<usize>,
+    pub(super) page_number: usize,
+    pub(super) page_count: usize,
+    pub(super) group_indices: Option<Vec<usize>>,
+}
+impl Default for RowContext {
+    fn default() -> Self {
+        Self {
+            rows: HashMap::new(),
+            row_number: None,
+            page_number: 1,
+            page_count: 1,
+            group_indices: None,
+        }
+    }
 }
 pub(super) struct Relations<'a> {
     data: &'a ReportData,
     edges: Vec<Relation>,
     root: Option<String>,
+    formulas: HashMap<String, String>,
 }
 impl<'a> Relations<'a> {
     pub(super) fn new(project: &Value, data: &'a ReportData) -> Result<Self> {
@@ -114,7 +130,92 @@ impl<'a> Relations<'a> {
                 return Err(Error::InvalidData(format!("missing root table: {id}")));
             }
         }
-        Ok(Self { data, edges, root })
+        let mut formulas = HashMap::new();
+        if let Some(definitions) = project["report"].get("formulas") {
+            let definitions = definitions
+                .as_array()
+                .ok_or_else(|| Error::InvalidReport("formulas must be an array".into()))?;
+            for definition in definitions {
+                let name = definition["name"]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .ok_or_else(|| Error::InvalidReport("formula name is missing".into()))?;
+                if !name.chars().enumerate().all(|(i, ch)| {
+                    ch == '_' || ch.is_ascii_alphabetic() || (i > 0 && ch.is_ascii_digit())
+                }) || matches!(
+                    name.to_ascii_uppercase().as_str(),
+                    "ROW_NUMBER"
+                        | "ROW_COUNT"
+                        | "TABLE_ROW_NUMBER"
+                        | "COLUMN_NUMBER"
+                        | "IS_ODD_ROW"
+                        | "PAGE_NUMBER"
+                        | "PAGE_COUNT"
+                        | "TRUE"
+                        | "FALSE"
+                        | "NULL"
+                ) {
+                    return Err(Error::InvalidReport(format!(
+                        "invalid formula name: {name}"
+                    )));
+                }
+                let expression = definition["expression"]
+                    .as_str()
+                    .filter(|s| !s.trim().is_empty())
+                    .ok_or_else(|| {
+                        Error::InvalidReport(format!("formula {name} expression is missing"))
+                    })?;
+                super::expressions::validate(expression)?;
+                if formulas
+                    .insert(name.to_owned(), expression.to_owned())
+                    .is_some()
+                {
+                    return Err(Error::InvalidReport(format!("duplicate formula: {name}")));
+                }
+            }
+        }
+        Ok(Self {
+            data,
+            edges,
+            root,
+            formulas,
+        })
+    }
+    pub(super) fn table(&self, name: &str) -> Option<&crate::repository::DataTable> {
+        self.data.table(name)
+    }
+    pub(super) fn formula(&self, name: &str) -> Option<&str> {
+        self.formulas.get(name).map(String::as_str)
+    }
+    pub(super) fn all_contexts(&self, table: &str, scope: &RowContext) -> Result<Vec<RowContext>> {
+        let source = self
+            .data
+            .table(table)
+            .ok_or_else(|| Error::InvalidData(format!("missing table: {table}")))?;
+        let mut contexts = Vec::new();
+        for index in 0..source.rows().len() {
+            if scope
+                .group_indices
+                .as_ref()
+                .is_some_and(|indices| !indices.contains(&index))
+            {
+                continue;
+            }
+            for mut row in self.contexts(table, index)? {
+                if scope
+                    .rows
+                    .iter()
+                    .filter(|(name, _)| name.as_str() != table)
+                    .all(|(name, index)| row.rows.get(name).is_none_or(|value| value == index))
+                {
+                    row.row_number = Some(contexts.len() + 1);
+                    row.page_number = scope.page_number;
+                    row.page_count = scope.page_count;
+                    contexts.push(row);
+                }
+            }
+        }
+        Ok(contexts)
     }
     /// Each context is one connected join combination starting at a specific row.
     pub(super) fn contexts(&self, table: &str, index: usize) -> Result<Vec<RowContext>> {
@@ -127,6 +228,10 @@ impl<'a> Relations<'a> {
         }
         let mut states = vec![RowContext {
             rows: HashMap::from([(table.to_owned(), index)]),
+            row_number: None,
+            page_number: 1,
+            page_count: 1,
+            group_indices: None,
         }];
         let mut bound = HashSet::from([table.to_owned()]);
         let mut used = HashSet::new();
@@ -212,6 +317,10 @@ impl<'a> Relations<'a> {
                     .next()
                     .unwrap_or_else(|| RowContext {
                         rows: HashMap::from([(table.name.clone(), 0)]),
+                        row_number: None,
+                        page_number: 1,
+                        page_count: 1,
+                        group_indices: None,
                     }));
             }
         }

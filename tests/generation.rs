@@ -1,18 +1,17 @@
 use reportstudio::{DataTable, DataType, DataValue, Error, ReportData, ReportGenerator};
 use std::{
     fs,
-    time::{SystemTime, UNIX_EPOCH},
+    sync::atomic::{AtomicU64, Ordering},
 };
+static NEXT_FILE: AtomicU64 = AtomicU64::new(0);
 fn temp_path(name: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!(
         "reportstudio-{}-{}-{name}",
         std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
+        NEXT_FILE.fetch_add(1, Ordering::Relaxed)
     ))
 }
+
 fn report() -> serde_json::Value {
     serde_json::json!({"version":1,"schemaVersion":1,"datasets":[{"id":"details","schema":{"fields":[{"name":"description","type":"text"}]},"data":[]}],"report":{"page":{"width":8.5,"height":11,"margins":{"top":0.5,"bottom":0.5,"left":0.5,"right":0.5}},"header":{"height":0.5,"elements":[{"type":"text","x":0,"y":0,"width":3,"height":0.3,"text":"Invoice","style":{"fontsize":12,"bold":true}}]},"details":[{"dataset":"details","band":{"height":0.3,"elements":[{"type":"text","x":0,"y":0,"width":3,"height":0.2,"text":"[description]","style":{"fontsize":9}}]}}]}})
 }

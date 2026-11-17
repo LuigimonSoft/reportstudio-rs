@@ -29,6 +29,7 @@ fn index(value: &Value, name: &str) -> Result<usize> {
 pub(super) fn prepare(
     section: &Value,
     relations: &Relations<'_>,
+    format: super::format::FormatContext<'_>,
     context: &RowContext,
     current: Option<&str>,
     compact: bool,
@@ -116,7 +117,14 @@ pub(super) fn prepare(
             let raw = element["text"]
                 .as_str()
                 .ok_or_else(|| Error::InvalidReport("text is missing".into()))?;
-            let rendered = super::layout::resolve(raw, relations, context, current)?;
+            let rendered = super::layout::resolve(
+                raw,
+                relations,
+                context,
+                current,
+                &element["style"],
+                format,
+            )?;
             let width = finite(&element["width"], "element width")?;
             if width <= 0.0 {
                 return Err(Error::InvalidReport("invalid table element width".into()));

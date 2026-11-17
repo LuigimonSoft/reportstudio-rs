@@ -50,7 +50,10 @@ fn win_ansi(ch: char) -> Option<u8> {
 fn measure(text: &str, size: f64, bold: bool) -> f64 {
     let widths = if bold { &BOLD_WIDTHS } else { &REGULAR_WIDTHS };
     let kerning = if bold { BOLD_KERNING } else { REGULAR_KERNING };
-    // `layout_lines` validates every character before measuring.
+    // Unicode lines use the embedded font's metrics; WinAnsi keeps designer metrics.
+    if text.chars().any(|ch| win_ansi(ch).is_none()) {
+        return crate::repository::unicode_width(text, size);
+    }
     let bytes: Vec<u8> = text
         .chars()
         .map(|ch| win_ansi(ch).expect("validated WinAnsi text"))
@@ -108,11 +111,26 @@ fn layout_lines(text: &str, style: &Value, width: f64) -> Result<(f64, Vec<Strin
         .filter(|n| n.is_finite() && (1.0..=100.0).contains(n))
         .ok_or_else(|| Error::InvalidReport("invalid font size".into()))?;
     let text = text.replace("\\n", "\n");
+    if text.chars().any(|ch| {
+        ch != '\n'
+            && ch != '\t'
+            && win_ansi(ch).is_none()
+            && !crate::repository::unicode_supports(ch)
+    }) {
+        return Err(Error::Unsupported(
+            "text is not covered by the embedded font".into(),
+        ));
+    }
     if text
         .chars()
         .any(|ch| ch != '\n' && ch != '\t' && win_ansi(ch).is_none())
+        && text
+            .chars()
+            .any(|ch| ch != '\n' && ch != '\t' && !crate::repository::unicode_supports(ch))
     {
-        return Err(Error::Unsupported("text outside WinAnsi encoding".into()));
+        return Err(Error::Unsupported(
+            "text is not covered by the embedded font".into(),
+        ));
     }
     let lines = wrap(
         &text.replace('\t', " "),
@@ -147,8 +165,11 @@ fn escape(text: &str) -> String {
 pub(super) fn render(spec: TextBox<'_>, output: &mut String) -> Result<()> {
     let style = spec.style;
     let (size, lines) = layout_lines(spec.text, style, spec.width)?;
-    if style["format"].as_str().is_some_and(|s| s != "text") {
-        return Err(Error::Unsupported("text value formatting".into()));
+    if style["format"]
+        .as_str()
+        .is_some_and(|s| !matches!(s, "text" | "number" | "currency" | "percent" | "date"))
+    {
+        return Err(Error::InvalidReport("invalid text value format".into()));
     }
     if style["fontFamily"].as_str().is_some_and(|s| {
         !matches!(
@@ -170,6 +191,13 @@ pub(super) fn render(spec: TextBox<'_>, output: &mut String) -> Result<()> {
     }
     let bold = style["bold"] == true;
     let italic = style["italic"] == true;
+    if (bold || italic)
+        && lines
+            .iter()
+            .any(|line| line.chars().any(|ch| win_ansi(ch).is_none()))
+    {
+        return Err(Error::Unsupported("bold or italic Unicode font".into()));
+    }
     let font = match (bold, italic) {
         (false, false) => "F1",
         (true, false) => "F2",
@@ -202,10 +230,21 @@ pub(super) fn render(spec: TextBox<'_>, output: &mut String) -> Result<()> {
                 _ => 0.0,
             };
         let baseline = spec.top - vertical_offset - size * 0.718 - index as f64 * line_height;
-        output.push_str(&format!(
-            "BT /{font} {size:.3} Tf {x:.3} {baseline:.3} Td ({}) Tj ET\n",
-            escape(line)
-        ));
+        if line.chars().any(|ch| win_ansi(ch).is_none()) {
+            use std::fmt::Write;
+            let mut encoded = String::new();
+            for ch in line.chars() {
+                write!(encoded, "{:04X}", ch as u32).unwrap();
+            }
+            output.push_str(&format!(
+                "BT /FU {size:.3} Tf {x:.3} {baseline:.3} Td <{encoded}> Tj ET\n"
+            ));
+        } else {
+            output.push_str(&format!(
+                "BT /{font} {size:.3} Tf {x:.3} {baseline:.3} Td ({}) Tj ET\n",
+                escape(line)
+            ));
+        }
         if style["underline"] == true && line_width > 0.0 {
             let thickness = (size / 16.0).max(0.5);
             let y = baseline - size * 0.12;

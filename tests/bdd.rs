@@ -1,3 +1,4 @@
+mod support;
 use cucumber::{given, then, when, World};
 use reportstudio::{DataTable, DataType, Error, ReportData, ReportGenerator};
 use std::{
@@ -219,4 +220,110 @@ fn report_with_table(world: &mut ReportWorld) {
         include_bytes!("browser/fixtures/table-report.json"),
     )
     .unwrap();
+}
+
+#[given("a report with formatted numeric and date fields")]
+fn formatted_report(world: &mut ReportWorld) {
+    fs::write(
+        world.report_path(),
+        include_bytes!("browser/fixtures/number-report.json"),
+    )
+    .unwrap();
+}
+#[given("the report's numeric data")]
+fn formatted_data(world: &mut ReportWorld) {
+    let mut table = DataTable::new("details");
+    table.add_column("amount", DataType::Decimal).unwrap();
+    table.add_column("ratio", DataType::Decimal).unwrap();
+    table.add_column("date", DataType::Date).unwrap();
+    table
+        .add_row(vec![
+            1500.25.into(),
+            0.12567.into(),
+            reportstudio::DataValue::Date("2026-01-02".into()),
+        ])
+        .unwrap();
+    world.data.add_table(table).unwrap();
+}
+#[then("the PDF contains the formatted values")]
+fn formatted_values(world: &mut ReportWorld) {
+    let bytes = world.result.as_ref().unwrap().as_ref().unwrap();
+    for value in ["1,500.25", "$1,500.25", "12.57%", "1/2/2026"] {
+        assert!(
+            bytes
+                .windows(value.len())
+                .any(|window| window == value.as_bytes()),
+            "missing {value}"
+        );
+    }
+}
+#[given("the air waybill example and its data tables")]
+fn awb_report(world: &mut ReportWorld) {
+    let bytes = include_bytes!("../examples/awb/awb-full-form-example.json");
+    let project: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+    world.data = support::sample_data(&project);
+    fs::write(world.report_path(), bytes).unwrap();
+}
+#[then("the PDF contains its linked parties and merchandise")]
+fn awb_values(world: &mut ReportWorld) {
+    let bytes = world.result.as_ref().unwrap().as_ref().unwrap();
+    for value in [
+        "NORTHSTAR EXPORTS LLC",
+        "DEMO IMPORTS SA",
+        "ELECTRONIC EQUIPMENT",
+        "MACHINE PARTS",
+        "PRINTED MATERIAL",
+    ] {
+        assert!(
+            bytes
+                .windows(value.len())
+                .any(|window| window == value.as_bytes()),
+            "missing {value}"
+        );
+    }
+}
+#[given("a report with page and report footers")]
+fn footer_report(world: &mut ReportWorld) {
+    fs::write(
+        world.report_path(),
+        include_bytes!("browser/fixtures/footer-report.json"),
+    )
+    .unwrap();
+}
+#[then("the PDF contains the page number and report footer")]
+fn footer_values(world: &mut ReportWorld) {
+    let bytes = world.result.as_ref().unwrap().as_ref().unwrap();
+    for value in ["Page 1 of 1", "END OF REPORT"] {
+        assert!(
+            bytes
+                .windows(value.len())
+                .any(|window| window == value.as_bytes()),
+            "missing {value}"
+        );
+    }
+}
+
+#[given("a report with a Japanese heading")]
+fn japanese_heading(world: &mut ReportWorld) {
+    let mut report: serde_json::Value =
+        serde_json::from_slice(include_bytes!("../examples/simple-report.json")).unwrap();
+    report["report"]["header"]["elements"][0]["text"] = serde_json::json!("México Montréal 東京");
+    report["report"]["header"]["elements"][0]["style"]["bold"] = serde_json::json!(false);
+    fs::write(world.report_path(), serde_json::to_vec(&report).unwrap()).unwrap();
+}
+#[then("the PDF includes an embedded Unicode font and mapping")]
+fn embedded_unicode_font(world: &mut ReportWorld) {
+    let bytes = world.result.as_ref().unwrap().as_ref().unwrap();
+    for text in [
+        "/FontFile2",
+        "/ToUnicode",
+        "<004D00E9007800690063006F0020004D006F006E0074007200E90061006C002067714EAC>",
+    ] {
+        assert!(
+            bytes
+                .windows(text.len())
+                .any(|window| window == text.as_bytes()),
+            "missing {text}"
+        );
+    }
 }

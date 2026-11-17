@@ -1,0 +1,146 @@
+{
+  "version": 1,
+  "schemaVersion": 1,
+  "datasets": [
+    {
+      "id": "details",
+      "name": "Details",
+      "schema": {
+        "fields": [
+          {
+            "name": "description",
+            "type": "text"
+          }
+        ]
+      },
+      "data": []
+    }
+  ],
+  "report": {
+    "version": 1,
+    "id": "simple-example",
+    "title": "Simple example",
+    "locale": "en-US",
+    "currency": "USD",
+    "page": {
+      "width": 8.5,
+      "height": 11,
+      "margins": {
+        "top": 0.5,
+        "bottom": 0.5,
+        "left": 0.5,
+        "right": 0.5
+      }
+    },
+    "header": {
+      "id": "header",
+      "name": "Header",
+      "height": 0.5,
+      "elements": [
+        {
+          "id": "title",
+          "type": "text",
+          "x": 0,
+          "y": 0,
+          "width": 4,
+          "height": 0.3,
+          "text": "Simple report",
+          "style": {
+            "fontsize": 16,
+            "bold": true,
+            "italic": false,
+            "align": "left",
+            "color": "#17213a",
+            "wrap": false,
+            "format": "text"
+          },
+          "src": ""
+        }
+      ]
+    },
+    "details": [
+      {
+        "id": "detail",
+        "dataset": "details",
+        "band": {
+          "id": "detail-band",
+          "name": "Details",
+          "height": 0.3,
+          "elements": [
+            {
+              "id": "description",
+              "type": "text",
+              "x": 0,
+              "y": 0,
+              "width": 4,
+              "height": 0.2,
+              "text": "[description]",
+              "style": {
+                "fontsize": 10,
+                "bold": false,
+                "italic": false,
+                "align": "left",
+                "color": "#17213a",
+                "wrap": false,
+                "format": "text"
+              },
+              "src": ""
+            }
+          ]
+        }
+      }
+    ],
+    "pageFooter": {
+      "id": "page-footer",
+      "name": "Page footer",
+      "height": 0.6,
+      "elements": [
+        {
+          "id": "page-number",
+          "type": "text",
+          "x": 0,
+          "y": 0.3,
+          "width": 4,
+          "height": 0.2,
+          "text": "Page [PAGE_NUMBER] of [PAGE_COUNT]",
+          "src": "",
+          "style": {
+            "fontsize": 10,
+            "bold": false,
+            "italic": false,
+            "align": "left",
+            "color": "#17213a",
+            "wrap": false,
+            "format": "text"
+          }
+        }
+      ]
+    },
+    "footer": {
+      "id": "report-footer",
+      "name": "Report footer",
+      "height": 0.4,
+      "elements": [
+        {
+          "id": "end",
+          "type": "text",
+          "x": 0,
+          "y": 0,
+          "width": 4,
+          "height": 0.2,
+          "text": "END OF REPORT",
+          "src": "",
+          "style": {
+            "fontsize": 10,
+            "bold": false,
+            "italic": false,
+            "align": "left",
+            "color": "#17213a",
+            "wrap": false,
+            "format": "text"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -4,9 +4,23 @@ version = "0.1.0"
 edition = "2021"
 description = "Generate PDFs from Report Studio report definitions"
 license = "MIT"
+repository = "https://github.com/LuigimonSoft/reportstudio-rs"
+readme = "README.md"
+keywords = ["reports", "pdf", "reporting"]
+categories = ["rendering", "visualization"]
+include = [
+    "/src/**", "/assets/fonts/**", "/examples/**", "/tests/**",
+    "/README.md", "/LICENSE*",
+    "!/tests/browser/node_modules/**", "!/tests/browser/test-results/**",
+    "!/tests/browser/playwright-report/**", "!/examples/awb/awb-rust-example.pdf",
+    "!**/._*",
+]
 
 [dependencies]
+base64 = "0.22.1"
+png = "0.17.16"
 serde_json = "1"
+ttf-parser = "0.25.1"
 
 [dev-dependencies]
 cucumber = "0.23.0"

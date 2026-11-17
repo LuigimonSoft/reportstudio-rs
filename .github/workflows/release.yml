@@ -1,0 +1,167 @@
+name: Publish release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Verify release version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Match tag to Cargo.toml
+        id: version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          version=$(cargo metadata --locked --no-deps --format-version 1 | python3 -c 'import json,sys; p=json.load(sys.stdin); print(next(x["version"] for x in p["packages"] if x["name"] == "reportstudio"))')
+          if [[ "$RELEASE_TAG" != "v$version" && "$RELEASE_TAG" != "$version" ]]; then
+            echo "Release tag '$RELEASE_TAG' must match Cargo.toml version '$version' (for example v$version)." >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  test:
+    name: Run all checks
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  package:
+    name: Verify and package crate
+    needs: [validate, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Check packaged files
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo package --locked --list > package-files.txt
+          for required in assets/fonts/NotoSansJP-Regular.ttf assets/fonts/OFL-NotoSansJP.txt tests/fixtures/intl-number-cases.json; do
+            grep -Fxq "$required" package-files.txt
+          done
+          if grep -Eq '(^|/)\._|(^|/)(node_modules|test-results|playwright-report)/' package-files.txt; then
+            echo "Unexpected generated files in the crate." >&2
+            exit 1
+          fi
+      - name: Validate the package without publishing
+        run: cargo publish --dry-run --locked
+      - name: Calculate package checksum
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          cd target/package
+          sha256sum "reportstudio-$VERSION.crate" > "reportstudio-$VERSION.crate.sha256"
+      - name: Store package for release
+        uses: actions/upload-artifact@v4
+        with:
+          name: crate-package
+          path: |
+            target/package/reportstudio-${{ needs.validate.outputs.version }}.crate
+            target/package/reportstudio-${{ needs.validate.outputs.version }}.crate.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish to crates.io
+    needs: [validate, package]
+    runs-on: ubuntu-latest
+    environment: crates-io
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/download-artifact@v4
+        with:
+          name: crate-package
+          path: validated-package
+      - name: Verify that the package matches the validated artifact
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          cargo package --locked
+          cmp "target/package/reportstudio-$VERSION.crate" "validated-package/reportstudio-$VERSION.crate"
+      - name: Publish the validated version
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          status=$(curl --silent --show-error --location --retry 3 \
+            --user-agent 'reportstudio-rs-release (https://github.com/LuigimonSoft/reportstudio-rs)' \
+            --output published.crate --write-out '%{http_code}' \
+            "https://crates.io/api/v1/crates/reportstudio/$VERSION/download")
+          case "$status" in
+            200)
+              if ! cmp -s "validated-package/reportstudio-$VERSION.crate" published.crate; then
+                echo "The published crate differs from this release; crates.io versions cannot be replaced." >&2
+                exit 1
+              fi
+              echo "The identical crate is already published; skipping upload."
+              ;;
+            404) cargo publish --locked ;;
+            *) echo "Unable to check crates.io (HTTP $status)." >&2; exit 1 ;;
+          esac
+
+  release-assets:
+    name: Attach downloadable crate
+    needs: [validate, package]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: crate-package
+          path: release-assets
+      - name: Upload package and checksum
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          existing=$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')
+          mkdir -p existing-assets
+          for name in "reportstudio-$VERSION.crate" "reportstudio-$VERSION.crate.sha256"; do
+            if grep -Fxq "$name" <<< "$existing"; then
+              gh release download "$RELEASE_TAG" --pattern "$name" --dir existing-assets
+              if ! cmp -s "release-assets/$name" "existing-assets/$name"; then
+                echo "Existing release asset '$name' differs; refusing to replace it." >&2
+                exit 1
+              fi
+              echo "Existing asset '$name' matches; skipping upload."
+            else
+              gh release upload "$RELEASE_TAG" "release-assets/$name"
+            fi
+          done

@@ -6,15 +6,18 @@ use serde_json::json;
 use support::*;
 
 #[test]
-#[ignore = "Unicode and embedded fonts are not implemented"]
 fn unicode_accents_and_non_latin_characters_survive_pdf_generation() {
     let mut f = filled();
     f.report["report"]["header"]["elements"][0]["text"] = json!("México Montréal 東京");
     let pdf = f.generate().unwrap();
     assert_pdf(&pdf);
     assert!(
-        has_text(&pdf, "México Montréal 東京"),
-        "PDF text must be extractable with the original Unicode characters"
+        has_text(&pdf, "/ToUnicode")
+            && has_text(
+                &pdf,
+                "<004D00E9007800690063006F0020004D006F006E0074007200E90061006C002067714EAC>"
+            ),
+        "PDF must contain the Unicode mapping and original UTF-16 characters"
     );
 }
 
@@ -30,7 +33,6 @@ fn multiline_text_preserves_both_lines() {
 }
 
 #[test]
-#[ignore = "page and report footers are not implemented"]
 fn footer_content_is_included() {
     let mut f = filled();
     f.report["report"]["footer"] =
@@ -40,7 +42,6 @@ fn footer_content_is_included() {
 }
 
 #[test]
-#[ignore = "page number special fields are not implemented"]
 fn page_number_and_count_are_evaluated() {
     let mut f = filled();
     f.report["report"]["footer"] =
@@ -51,7 +52,6 @@ fn page_number_and_count_are_evaluated() {
 }
 
 #[test]
-#[ignore = "multi-page layout is not implemented"]
 fn large_detail_sets_produce_multiple_pages_without_losing_rows() {
     let mut f = Fixture::new();
     let mut t = DataTable::new("details");
@@ -72,7 +72,6 @@ fn large_detail_sets_produce_multiple_pages_without_losing_rows() {
 }
 
 #[test]
-#[ignore = "section visibility expressions are not implemented"]
 fn boolean_section_formula_hides_content() {
     let mut f = filled();
     f.report["report"]["header"]["visibilityExpression"] = json!("false");
@@ -82,7 +81,6 @@ fn boolean_section_formula_hides_content() {
 }
 
 #[test]
-#[ignore = "nested sections are not implemented"]
 fn nested_section_content_is_rendered() {
     let mut f = filled();
     f.report["report"]["header"]["sections"] =
@@ -92,7 +90,6 @@ fn nested_section_content_is_rendered() {
 }
 
 #[test]
-#[ignore = "formula fields are not implemented"]
 fn named_formula_is_evaluated_in_detail_context() {
     let mut f = Fixture::new();
     let mut t = DataTable::new("details");
@@ -101,6 +98,8 @@ fn named_formula_is_evaluated_in_detail_context() {
     t.add_row(vec![2.into(), 10.into()]).unwrap();
     t.add_row(vec![3.into(), 10.into()]).unwrap();
     f.data.add_table(t).unwrap();
+    f.report["datasets"][0]["schema"]["fields"] =
+        json!([{"name":"quantity","type":"number"},{"name":"price","type":"number"}]);
     f.report["report"]["formulas"] = json!([{"name":"LineTotal","expression":"quantity * price"}]);
     f.report["report"]["details"][0]["band"]["elements"][0]["text"] = json!("[LineTotal]");
     let pdf = f.generate().unwrap();
@@ -109,7 +108,6 @@ fn named_formula_is_evaluated_in_detail_context() {
 }
 
 #[test]
-#[ignore = "SUM aggregate expressions are not implemented"]
 fn sum_expression_uses_all_detail_rows() {
     let mut f = Fixture::new();
     let mut t = DataTable::new("details");
@@ -117,6 +115,7 @@ fn sum_expression_uses_all_detail_rows() {
     t.add_row(vec![10.into()]).unwrap();
     t.add_row(vec![20.into()]).unwrap();
     f.data.add_table(t).unwrap();
+    f.report["datasets"][0]["schema"]["fields"] = json!([{"name":"amount","type":"number"}]);
     f.report["report"]["details"][0]["band"]["elements"][0]["text"] = json!("[amount]");
     f.report["report"]["details"][0]["groupFooter"] =
         json!({"id":"totals","height":0.3,"elements":[text("[SUM(amount)]")]});
@@ -126,13 +125,13 @@ fn sum_expression_uses_all_detail_rows() {
 }
 
 #[test]
-#[ignore = "number and currency formatting are not implemented"]
 fn currency_values_follow_report_locale_and_currency() {
     let mut f = Fixture::new();
     let mut t = DataTable::new("details");
     t.add_column("amount", DataType::Decimal).unwrap();
     t.add_row(vec![1500.25.into()]).unwrap();
     f.data.add_table(t).unwrap();
+    f.report["datasets"][0]["schema"]["fields"] = json!([{"name":"amount","type":"number"}]);
     let e = &mut f.report["report"]["details"][0]["band"]["elements"][0];
     e["text"] = json!("[amount]");
     e["style"]["format"] = json!("currency");
@@ -214,11 +213,14 @@ fn line_and_rectangle_are_rendered_as_graphics() {
 }
 
 #[test]
-#[ignore = "charts are not implemented"]
 fn bound_chart_renders_without_inserting_error_text() {
     let mut f = filled();
     let mut chart = text("");
     chart["type"] = json!("chart");
+    chart["y"] = json!(0.4);
+    chart["height"] = json!(2.0);
+    chart["width"] = json!(4.0);
+    f.report["report"]["header"]["height"] = json!(2.5);
     chart["chart"] = json!({"kind":"bar","dataset":"details","category":"name","value":"name","aggregation":"count","sort":"source","limit":10,"title":"Sales chart","color":"#2563eb","background":"#ffffff","showLegend":false,"showLabels":true,"showGrid":true});
     f.report["report"]["header"]["elements"]
         .as_array_mut()
@@ -226,6 +228,10 @@ fn bound_chart_renders_without_inserting_error_text() {
         .push(chart);
     let pdf = f.generate().unwrap();
     assert_pdf(&pdf);
+    assert!(has_text(&pdf, "Sales chart"));
+    assert!(has_text(&pdf, "Alpha"));
+    assert!(has_text(&pdf, "Beta"));
+    assert!(has_text(&pdf, "0.1451 0.3882 0.9216 rg"));
     assert!(!has_text(&pdf, "No chart data"));
 }
 
@@ -259,7 +265,6 @@ fn table_without_columns_cannot_accept_a_row() {
 }
 
 #[test]
-#[ignore = "AWB rendering, numeric formatting, expressions and footer placement are incomplete"]
 fn awb_renders_reference_content_and_all_three_goods_rows() {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -285,7 +290,6 @@ fn awb_renders_reference_content_and_all_three_goods_rows() {
 }
 
 #[test]
-#[ignore = "AWB rendering and external data substitution are not implemented"]
 fn awb_uses_supplied_records_instead_of_embedded_fixture_records() {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -324,7 +328,6 @@ fn repeated_detail_table_renders_every_record() {
 }
 
 #[test]
-#[ignore = "page footer repetition is not implemented"]
 fn footer_appears_on_every_page_of_a_long_report() {
     let mut f = Fixture::new();
     let mut t = DataTable::new("details");
@@ -341,7 +344,6 @@ fn footer_appears_on_every_page_of_a_long_report() {
 }
 
 #[test]
-#[ignore = "ROW_NUMBER special field is not implemented"]
 fn row_number_is_evaluated_for_each_detail_record() {
     let mut f = filled();
     f.report["report"]["details"][0]["band"]["elements"][0]["text"] =
@@ -352,7 +354,6 @@ fn row_number_is_evaluated_for_each_detail_record() {
 }
 
 #[test]
-#[ignore = "formatted section colors are not implemented"]
 fn fixed_section_background_is_rendered() {
     let mut f = filled();
     f.report["report"]["header"]["background"] = json!("#ff0000");
@@ -366,7 +367,6 @@ fn fixed_section_background_is_rendered() {
 }
 
 #[test]
-#[ignore = "expression errors are not implemented"]
 fn circular_formulas_fail_with_a_clear_error() {
     let mut f = filled();
     f.report["report"]["formulas"] =
@@ -379,12 +379,11 @@ fn circular_formulas_fail_with_a_clear_error() {
 }
 
 #[test]
-#[ignore = "images are not implemented"]
-fn embedded_image_produces_a_pdf_image_object() {
+fn embedded_image_produces_a_pdf_image_stream() {
     let mut f = filled();
     let mut image = text("");
     image["type"] = json!("image");
-    image["src"] = json!("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jCYQAAAAASUVORK5CYII=");
+    image["src"] = json!("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=");
     f.report["report"]["header"]["elements"]
         .as_array_mut()
         .unwrap()
@@ -392,13 +391,12 @@ fn embedded_image_produces_a_pdf_image_object() {
     let pdf = f.generate().unwrap();
     assert_pdf(&pdf);
     assert!(
-        has_text(&pdf, "/Image"),
-        "embedded picture must be represented in PDF resources"
+        has_text(&pdf, "/Subtype /Image") && has_text(&pdf, "/ASCIIHexDecode"),
+        "embedded picture must be represented as a PDF inline image"
     );
 }
 
 #[test]
-#[ignore = "report parameters and filtering are not implemented"]
 fn saved_parameter_filters_detail_rows() {
     let mut f = filled();
     f.report["parameters"] = json!([{"id":"filter","label":"Name","type":"text","dataset":"details","field":"name","operator":"eq","value":"Alpha","saveValue":true}]);
@@ -408,7 +406,6 @@ fn saved_parameter_filters_detail_rows() {
 }
 
 #[test]
-#[ignore = "per-row section visibility is not implemented"]
 fn section_visibility_formula_filters_rows_by_boolean_field() {
     let mut f = Fixture::new();
     let mut t = DataTable::new("details");
@@ -424,7 +421,6 @@ fn section_visibility_formula_filters_rows_by_boolean_field() {
 }
 
 #[test]
-#[ignore = "grouped details are not implemented"]
 fn grouping_emits_a_header_for_each_distinct_group() {
     let mut f = Fixture::new();
     let mut t = DataTable::new("details");
@@ -443,7 +439,6 @@ fn grouping_emits_a_header_for_each_distinct_group() {
 }
 
 #[test]
-#[ignore = "conditional section backgrounds are not implemented"]
 fn formula_can_select_a_section_background_color() {
     let mut f = filled();
     f.report["report"]["header"]["backgroundExpression"] = json!("IF(1 = 1, '#ff0000', '#0000ff')");

@@ -1,5 +1,10 @@
+mod chart;
+mod expressions;
+mod format;
 mod helvetica_metrics;
+mod image;
 mod layout;
+mod pagination;
 mod parameters;
 mod relations;
 mod report_service;

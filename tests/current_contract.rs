@@ -153,12 +153,12 @@ fn large_integer_values_never_silently_lose_precision() {
     assert!(has_text(&pdf, "9223372036854775807"));
 }
 #[test]
-fn valid_parameter_is_not_silently_ignored_before_filtering_exists() {
+fn valid_parameter_filters_supplied_rows() {
     let mut f = filled();
     f.report["parameters"] = json!([{"id":"name","type":"text","dataset":"details","field":"name","operator":"eq","value":"Alpha","required":true}]);
-    assert!(
-        matches!(f.generate(), Err(Error::Unsupported(feature)) if feature.contains("parameter"))
-    );
+    let pdf = f.generate().unwrap();
+    assert!(has_text(&pdf, "Alpha"));
+    assert!(!has_text(&pdf, "Beta"));
 }
 #[test]
 fn empty_message_does_not_block_populated_details() {
@@ -186,6 +186,6 @@ fn winansi_accents_are_encoded_without_corrupting_the_pdf() {
 #[test]
 fn unsupported_writing_system_returns_an_error_instead_of_losing_text() {
     let mut f = filled();
-    f.report["report"]["header"]["elements"][0]["text"] = json!("東京");
+    f.report["report"]["header"]["elements"][0]["text"] = json!("🧪");
     assert!(matches!(f.generate(), Err(Error::Unsupported(_))));
 }

@@ -1,0 +1,159 @@
+{
+  "version": 1,
+  "schemaVersion": 1,
+  "datasets": [
+    {
+      "id": "details",
+      "name": "Details",
+      "schema": {
+        "fields": [
+          {
+            "name": "amount",
+            "type": "number"
+          },
+          {
+            "name": "ratio",
+            "type": "number"
+          },
+          {
+            "name": "date",
+            "type": "text"
+          }
+        ]
+      },
+      "data": []
+    }
+  ],
+  "report": {
+    "version": 1,
+    "id": "simple-example",
+    "title": "Simple example",
+    "locale": "en-US",
+    "currency": "USD",
+    "page": {
+      "width": 8.5,
+      "height": 11,
+      "margins": {
+        "top": 0.5,
+        "bottom": 0.5,
+        "left": 0.5,
+        "right": 0.5
+      }
+    },
+    "header": {
+      "id": "header",
+      "name": "Header",
+      "height": 0.5,
+      "elements": [
+        {
+          "id": "title",
+          "type": "text",
+          "x": 0,
+          "y": 0,
+          "width": 4,
+          "height": 0.3,
+          "text": "Simple report",
+          "style": {
+            "fontsize": 16,
+            "bold": true,
+            "italic": false,
+            "align": "left",
+            "color": "#17213a",
+            "wrap": false,
+            "format": "text"
+          },
+          "src": ""
+        }
+      ]
+    },
+    "details": [
+      {
+        "id": "detail",
+        "dataset": "details",
+        "band": {
+          "id": "detail-band",
+          "name": "Details",
+          "height": 0.3,
+          "elements": [
+            {
+              "id": "fmt-0",
+              "type": "text",
+              "x": 0,
+              "y": 0,
+              "width": 1.4,
+              "height": 0.2,
+              "text": "[amount]",
+              "src": "",
+              "style": {
+                "fontsize": 10,
+                "bold": false,
+                "italic": false,
+                "align": "left",
+                "color": "#17213a",
+                "wrap": false,
+                "format": "number"
+              }
+            },
+            {
+              "id": "fmt-1",
+              "type": "text",
+              "x": 2,
+              "y": 0,
+              "width": 1.4,
+              "height": 0.2,
+              "text": "[amount]",
+              "src": "",
+              "style": {
+                "fontsize": 10,
+                "bold": false,
+                "italic": false,
+                "align": "left",
+                "color": "#17213a",
+                "wrap": false,
+                "format": "currency"
+              }
+            },
+            {
+              "id": "fmt-2",
+              "type": "text",
+              "x": 4,
+              "y": 0,
+              "width": 1.4,
+              "height": 0.2,
+              "text": "[ratio]",
+              "src": "",
+              "style": {
+                "fontsize": 10,
+                "bold": false,
+                "italic": false,
+                "align": "left",
+                "color": "#17213a",
+                "wrap": false,
+                "format": "percent"
+              }
+            },
+            {
+              "id": "fmt-3",
+              "type": "text",
+              "x": 6,
+              "y": 0,
+              "width": 1.4,
+              "height": 0.2,
+              "text": "[date]",
+              "src": "",
+              "style": {
+                "fontsize": 10,
+                "bold": false,
+                "italic": false,
+                "align": "left",
+                "color": "#17213a",
+                "wrap": false,
+                "format": "date"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
