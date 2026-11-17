@@ -863,6 +863,7 @@ dependencies = [
  "cucumber",
  "futures",
  "png",
+ "serde",
  "serde_json",
  "ttf-parser",
 ]

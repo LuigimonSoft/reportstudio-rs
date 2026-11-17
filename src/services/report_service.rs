@@ -1,4 +1,7 @@
-use super::{GenerateReportInput, GenerateReportOutput, Result};
+use super::{
+    GenerateReportDefinitionInput, GenerateReportInput, GenerateReportOutput, ReportData,
+    ReportDefinition, Result,
+};
 use crate::repository::{DocumentRepository, FileDocumentRepository};
 use std::path::Path;
 /// Coordinates report loading, layout and PDF persistence.
@@ -18,8 +21,22 @@ impl<R: DocumentRepository> ReportService<R> {
     }
     pub fn generate(&self, input: &GenerateReportInput) -> Result<GenerateReportOutput> {
         let report = self.repository.load_report(&input.report_path)?;
+        self.render_definition(&report, &input.data)
+    }
+    /// Generate directly from a report model without loading a report file.
+    pub fn generate_from_definition(
+        &self,
+        input: &GenerateReportDefinitionInput,
+    ) -> Result<GenerateReportOutput> {
+        self.render_definition(&input.report, &input.data)
+    }
+    fn render_definition(
+        &self,
+        report: &ReportDefinition,
+        data: &ReportData,
+    ) -> Result<GenerateReportOutput> {
         Ok(GenerateReportOutput {
-            pdf_bytes: super::layout::render(report.as_json_value(), &input.data)?,
+            pdf_bytes: super::layout::render(report.as_json_value(), data)?,
         })
     }
     pub fn save(&self, output: &GenerateReportOutput, path: &Path) -> Result<()> {
@@ -31,8 +48,8 @@ impl<R: DocumentRepository> ReportService<R> {
 mod tests {
     use super::ReportService;
     use crate::repository::{
-        DataTable, DataType, DocumentRepository, Error, GenerateReportInput, ReportData,
-        ReportDefinition, Result,
+        DataTable, DataType, DocumentRepository, Error, GenerateReportDefinitionInput,
+        GenerateReportInput, ReportData, ReportDefinition, Result,
     };
     use serde_json::{json, Value};
     use std::{
@@ -88,6 +105,30 @@ mod tests {
         assert!(writes.borrow().is_empty());
         service.save(&output, Path::new("virtual.pdf")).unwrap();
         assert_eq!(writes.borrow()[0], output.pdf_bytes);
+    }
+    #[test]
+    fn in_memory_definition_does_not_call_load_report() {
+        struct SaveOnly;
+        impl DocumentRepository for SaveOnly {
+            fn load_report(&self, _: &Path) -> Result<ReportDefinition> {
+                panic!("in-memory definitions must not be loaded from storage")
+            }
+            fn save_pdf(&self, _: &Path, _: &[u8]) -> Result<()> {
+                Ok(())
+            }
+        }
+        let (_, file_input, _) = fixture();
+        let report = ReportDefinition::from_json_value(
+            json!({"version":1,"report":{"page":{"width":8.5,"height":11,"margins":{"top":0.5,"right":0.5,"bottom":0.5,"left":0.5}},"details":[{"dataset":"details","band":{"height":0.3,"elements":[{"type":"text","x":0,"y":0,"width":2,"height":0.2,"text":"[name]","style":{"fontsize":9}}]}}]}}),
+        );
+        let input = GenerateReportDefinitionInput {
+            report,
+            data: file_input.data,
+        };
+        let result = ReportService::new(SaveOnly)
+            .generate_from_definition(&input)
+            .unwrap();
+        assert!(result.pdf_bytes.starts_with(b"%PDF-"));
     }
     #[test]
     fn failed_render_never_writes_an_output() {

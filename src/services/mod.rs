@@ -12,7 +12,7 @@ mod schema;
 mod table;
 mod text;
 pub use crate::repository::{
-    DataColumn, DataRow, DataTable, DataType, DataValue, Error, GenerateReportInput,
-    GenerateReportOutput, ReportData, Result,
+    DataColumn, DataRow, DataTable, DataType, DataValue, Error, GenerateReportDefinitionInput,
+    GenerateReportInput, GenerateReportOutput, ReportData, ReportDefinition, ReportProject, Result,
 };
 pub use report_service::ReportService;

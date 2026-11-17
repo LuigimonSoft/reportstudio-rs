@@ -68,3 +68,15 @@ Feature: Generate a report PDF
     And a details table with two records
     When I generate the PDF
     Then the PDF includes an embedded Unicode font and mapping
+
+  Scenario: Generate a PDF from an in-memory report definition
+    Given an in-memory report definition
+    And a details table with two records
+    When I generate the PDF from the in-memory definition
+    Then the PDF contains both detail records
+
+  Scenario: Generate a PDF from an editable typed project model
+    Given an editable report project model
+    And a details table with two records
+    When I generate the PDF from the typed model
+    Then the PDF contains the edited title and detail records

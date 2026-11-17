@@ -5,5 +5,6 @@ pub mod models;
 pub mod repository;
 pub mod services;
 pub use application::{
-    DataColumn, DataRow, DataTable, DataType, DataValue, Error, ReportData, ReportGenerator, Result,
+    DataColumn, DataRow, DataTable, DataType, DataValue, Error, GenerateReportDefinitionInput,
+    ReportData, ReportDefinition, ReportGenerator, ReportProject, Result,
 };

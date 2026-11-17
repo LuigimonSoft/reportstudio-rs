@@ -72,7 +72,10 @@ test.beforeAll(async () => {
   const formulaJson = path.join(directory,'formula.json'), formulaPdf = path.join(directory,'formula.pdf');
   await writeFile(formulaJson, JSON.stringify(formulaReport));
   execFileSync('cargo',['run','--quiet','--locked','--example','number_fixture','--',formulaPdf,formulaJson],{cwd:root,env:process.env,stdio:'pipe'});
+  const memoryPdf = path.join(directory, 'in-memory.pdf');
+  execFileSync('cargo', ['run','--quiet','--locked','--example','in_memory','--',memoryPdf], {cwd:root,env:process.env,stdio:'pipe'});
   reports = {
+    '/in-memory.pdf': memoryPdf,
     '/unicode.pdf': makeReport('unicode.pdf','Implementation consulting',unicodeJson),
     '/chart.pdf': makeReport('chart.pdf','Implementation consulting',chartJson),
     '/group.pdf': groupPdf,
@@ -417,4 +420,15 @@ test('embedded Unicode font renders and extracts Japanese and accented text', as
     return ink;
   },{x:item.x,y:item.y,width:item.width,height:result.height});
   expect(japaneseInk).toBeGreaterThan(10);
+});
+
+
+test('an in-memory report matches the file-based PDF', async ({page}) => {
+  const file=await inspectPDF(page, '/original.pdf');
+  const memory=await inspectPDF(page, '/in-memory.pdf');
+  expect(memory.pageCount).toBe(file.pageCount);
+  expect(memory.width).toBe(file.width);
+  expect(memory.height).toBe(file.height);
+  expect(memory.items).toEqual(file.items);
+  expect(memory.samples).toEqual(file.samples);
 });

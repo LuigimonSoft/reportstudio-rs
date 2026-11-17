@@ -3,6 +3,8 @@ mod error;
 pub mod input;
 pub mod output;
 mod report_definition;
+pub mod report_schema;
 pub use data::{DataColumn, DataRow, DataTable, DataType, DataValue, ReportData};
 pub use error::{Error, Result};
 pub use report_definition::ReportDefinition;
+pub use report_schema::ReportProject;

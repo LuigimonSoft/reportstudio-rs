@@ -1,6 +1,8 @@
 mod support;
 use cucumber::{given, then, when, World};
-use reportstudio::{DataTable, DataType, Error, ReportData, ReportGenerator};
+use reportstudio::{
+    DataTable, DataType, Error, ReportData, ReportDefinition, ReportGenerator, ReportProject,
+};
 use std::{
     fs,
     path::PathBuf,
@@ -13,6 +15,8 @@ struct ReportWorld {
     directory: PathBuf,
     data: ReportData,
     table: Option<DataTable>,
+    definition: Option<ReportDefinition>,
+    project: Option<ReportProject>,
     result: Option<reportstudio::Result<Vec<u8>>>,
     invalid_row_rejected: bool,
 }
@@ -28,6 +32,8 @@ impl Default for ReportWorld {
             directory,
             data: ReportData::new(),
             table: None,
+            definition: None,
+            project: None,
             result: None,
             invalid_row_rejected: false,
         }
@@ -326,4 +332,44 @@ fn embedded_unicode_font(world: &mut ReportWorld) {
             "missing {text}"
         );
     }
+}
+
+#[given("an in-memory report definition")]
+fn memory_definition(world: &mut ReportWorld) {
+    world.definition = Some(
+        ReportDefinition::from_json_str(include_str!("../examples/simple-report.json")).unwrap(),
+    );
+}
+#[when("I generate the PDF from the in-memory definition")]
+fn generate_from_memory(world: &mut ReportWorld) {
+    world.result = Some(
+        ReportGenerator::from_definition(world.definition.take().unwrap())
+            .with_data(world.data.clone())
+            .to_pdf_bytes(),
+    );
+}
+
+#[given("an editable report project model")]
+fn typed_project(world: &mut ReportWorld) {
+    let mut project: ReportProject =
+        serde_json::from_str(include_str!("../examples/simple-report.json")).unwrap();
+    project.report.header.as_mut().unwrap().elements[0].text = Some("Typed report".into());
+    world.project = Some(project);
+}
+#[when("I generate the PDF from the typed model")]
+fn generate_from_typed_model(world: &mut ReportWorld) {
+    world.result = Some(
+        ReportGenerator::from_model(world.project.as_ref().unwrap())
+            .unwrap()
+            .with_data(world.data.clone())
+            .to_pdf_bytes(),
+    );
+}
+#[then("the PDF contains the edited title and detail records")]
+fn typed_pdf_contents(world: &mut ReportWorld) {
+    pdf_contains_rows(world);
+    let bytes = world.result.as_ref().unwrap().as_ref().unwrap();
+    assert!(bytes
+        .windows(b"Typed report".len())
+        .any(|s| s == b"Typed report"));
 }
