@@ -604,3 +604,9 @@ To publish a release:
 4. After all checks pass, Actions verifies the package, publishes it to crates.io, and attaches the `.crate` and its SHA-256 checksum to the GitHub Release. Existing release assets are left untouched if their bytes differ. A `.crate` contains source and assets for Cargo to compile; it is not a standalone executable.
 
 The release workflow does not modify the version from the tag. This keeps the published package tied to the committed manifest and lockfile. To inspect a package locally, run `cargo package --locked --list` and `cargo publish --locked --dry-run`. The latter does not publish. Release and registry publication are separate jobs: inspect both job results if either fails. A rerun skips an already published crate only when its bytes match the validated package. Once a version is published, crates.io does not permit replacing its contents; publish a new version for changes.
+
+### Retry a published release after fixing the workflow
+
+A re-run of an old Actions run uses the workflow revision from that run. If the workflow itself has been fixed since then, first commit and push the fixed workflow to the default branch. Then open **Actions → Publish release → Run workflow**, select the default branch, and enter the tag of the existing published release (for example, `0.1.0`) in `release_tag`.
+
+The manual run checks that the GitHub Release is published and that the tag matches the package version. It checks out and tests the **tagged commit**, not the default branch, and then packages that same commit. It will not move the tag or replace a different existing release asset or crates.io version. If the tag does not contain the source you want to release, create a new version and tag instead.

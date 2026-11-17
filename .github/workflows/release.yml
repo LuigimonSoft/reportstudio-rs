@@ -3,12 +3,18 @@ name: Publish release
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Tag of an existing published GitHub Release
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.event.release.tag_name }}
+  group: release-${{ github.event.release.tag_name || inputs.release_tag }}
   cancel-in-progress: false
 
 jobs:
@@ -20,13 +26,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ format('refs/tags/{0}', github.event.release.tag_name || inputs.release_tag) }}
       - uses: dtolnay/rust-toolchain@stable
+      - name: Verify the GitHub release is published
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          is_draft=$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)
+          if [[ "$is_draft" != "false" ]]; then
+            echo "Release '$RELEASE_TAG' must be published before this workflow runs." >&2
+            exit 1
+          fi
       - name: Match tag to Cargo.toml
         id: version
         shell: bash
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
         run: |
           set -euo pipefail
           version=$(cargo metadata --locked --no-deps --format-version 1 | python3 -c 'import json,sys; p=json.load(sys.stdin); print(next(x["version"] for x in p["packages"] if x["name"] == "reportstudio"))')
@@ -42,6 +61,8 @@ jobs:
     uses: ./.github/workflows/ci.yml
     permissions:
       contents: read
+    with:
+      checkout_ref: ${{ format('refs/tags/{0}', github.event.release.tag_name || inputs.release_tag) }}
 
   package:
     name: Verify and package crate
@@ -50,7 +71,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ format('refs/tags/{0}', github.event.release.tag_name || inputs.release_tag) }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Check packaged files
@@ -67,6 +88,8 @@ jobs:
           fi
       - name: Validate the package without publishing
         run: cargo publish --dry-run --locked
+      - name: Create the release crate
+        run: cargo package --locked
       - name: Calculate package checksum
         shell: bash
         env:
@@ -93,7 +116,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ format('refs/tags/{0}', github.event.release.tag_name || inputs.release_tag) }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: actions/download-artifact@v4
@@ -147,7 +170,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
           set -euo pipefail
