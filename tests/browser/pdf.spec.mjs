@@ -32,7 +32,11 @@ test.beforeAll(async () => {
   const awbPath = path.join(directory, 'awb.pdf');
   const awbChangedPath = path.join(directory, 'awb-changed.pdf');
   for (const [file, shipper] of [[awbPath, 'NORTHSTAR EXPORTS LLC'], [awbChangedPath, 'ALTERNATIVE SHIPPER LLC']]) {
-    execFileSync('cargo', ['run', '--quiet', '--locked', '--example', 'awb_fixture', '--', file, shipper], {cwd:root, env:process.env, stdio:'pipe'});
+    const data = JSON.parse(await readFile(path.join(root, 'examples/awb/awb-data.json'), 'utf8'));
+    data.tables.shipper[0].name = shipper;
+    const dataPath = file.replace(/\.pdf$/, '.json');
+    await writeFile(dataPath, JSON.stringify(data));
+    execFileSync('cargo', ['run', '--quiet', '--locked', '--example', 'awb_fixture', '--', file, dataPath], {cwd:root, env:process.env, stdio:'pipe'});
   }
   const numberPath = path.join(directory, 'numbers.pdf');
   execFileSync('cargo', ['run', '--quiet', '--locked', '--example', 'number_fixture', '--', numberPath, path.join(here, 'fixtures', 'number-report.json')], {cwd:root, env:process.env, stdio:'pipe'});

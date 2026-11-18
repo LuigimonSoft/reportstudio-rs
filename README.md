@@ -284,7 +284,46 @@ This is the structure of the included minimal report, simplified to one detail f
 
 Page size, margins, section heights, and element positions and dimensions are expressed in **inches**; font sizes are in points. A detail band bound to `details` is rendered for its supplied records. The example's `data: []` describes the template; the Rust library uses the separately supplied `ReportData` instead of loading embedded sample records.
 
-For a larger reference, see [`examples/awb/awb-full-form-example.json`](examples/awb/awb-full-form-example.json). Its data is fictional. The accompanying [`examples/awb_fixture.rs`](examples/awb_fixture.rs) converts its sample tables into `ReportData` and generates an air waybill; production applications should supply their own records.
+### Air waybill with external JSON data
+
+The AWB example keeps its report definition and data in separate files:
+
+- [`awb-template.json`](examples/awb/awb-template.json) contains the design, table schemas and relationships. All dataset `data` arrays are empty.
+- [`awb-data.json`](examples/awb/awb-data.json) contains fictional records grouped by dataset ID. `awb` is the parent and `goods` contains the repeated detail rows; the other tables supply related records.
+- [`awb_fixture.rs`](examples/awb_fixture.rs) invokes the example adapter [`data_loader.rs`](examples/awb/data_loader.rs), which reads the template schema and maps the external records to `DataTable`, `DataColumn` and `DataValue` values in a `ReportData` collection.
+
+```sh
+cargo run --example awb_fixture -- ./awb.pdf
+# Or use your own data file with the same table IDs and field names:
+cargo run --example awb_fixture -- ./awb.pdf ./my-awb-data.json
+```
+
+The external file uses a `tables` object. For example (the complete file must contain every table required by the template):
+
+```json
+{
+  "tables": {
+    "awb": [{"id": 1001, "number": "729-48229182", "shipperId": 1}],
+    "shipper": [{"id": 1, "name": "Example shipper"}],
+    "goods": [{"id": 1, "awbId": 1001, "pieces": 10}]
+  }
+}
+```
+
+The adapter reads each schema in order, creates its `DataTable` and typed columns, maps each JSON record into a row in column order, then adds the table to `ReportData`. Missing field values become null; missing tables, unknown tables or fields, unsupported values and incompatible types produce errors. This AWB-specific adapter supports text, number and boolean columns; it is example application code, not a general JSON import API of the library. Empty tables must still appear as arrays.
+
+```rust,no_run
+# use reportstudio::ReportGenerator;
+# use std::path::Path;
+# fn load_report_data(_: &Path, _: &Path) -> Result<reportstudio::ReportData, Box<dyn std::error::Error>> { unimplemented!() }
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+let report = Path::new("examples/awb/awb-template.json");
+let data = load_report_data(report, Path::new("examples/awb/awb-data.json"))?;
+ReportGenerator::new(report).with_data(data).save_pdf("awb.pdf")?;
+# Ok(()) }
+```
+
+See the complete adapter for the table and row conversion. [`awb-full-form-example.json`](examples/awb/awb-full-form-example.json) remains a populated historical fixture used by compatibility tests; the Rust renderer receives records through `ReportData`.
 
 ## Relationships
 
