@@ -41,19 +41,18 @@ jobs:
             echo "Release '$RELEASE_TAG' must be published before this workflow runs." >&2
             exit 1
           fi
-      - name: Match tag to Cargo.toml
+      - name: Validate release tag
         id: version
         shell: bash
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
         run: |
           set -euo pipefail
-          version=$(cargo metadata --locked --no-deps --format-version 1 | python3 -c 'import json,sys; p=json.load(sys.stdin); print(next(x["version"] for x in p["packages"] if x["name"] == "reportstudio"))')
-          if [[ "$RELEASE_TAG" != "v$version" && "$RELEASE_TAG" != "$version" ]]; then
-            echo "Release tag '$RELEASE_TAG' must match Cargo.toml version '$version' (for example v$version)." >&2
+          if [[ ! "$RELEASE_TAG" =~ ^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Expected a stable MAJOR.MINOR.PATCH tag, optionally prefixed by v: $RELEASE_TAG" >&2
             exit 1
           fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
 
   test:
     name: Run all checks
@@ -74,11 +73,22 @@ jobs:
           ref: ${{ format('refs/tags/{0}', github.event.release.tag_name || inputs.release_tag) }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      # Use the workflow revision for the helper when rebuilding an older tag.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: .release-workflow
+      - name: Apply the release version
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          python3 -m unittest discover -s .release-workflow/scripts/tests
+          python3 .release-workflow/scripts/release_version.py "$RELEASE_VERSION"
       - name: Check packaged files
         shell: bash
         run: |
           set -euo pipefail
-          cargo package --locked --list > package-files.txt
+          cargo package --locked --allow-dirty --list > package-files.txt
           for required in assets/fonts/NotoSansJP-Regular.ttf assets/fonts/OFL-NotoSansJP.txt tests/fixtures/intl-number-cases.json; do
             grep -Fxq "$required" package-files.txt
           done
@@ -87,9 +97,9 @@ jobs:
             exit 1
           fi
       - name: Validate the package without publishing
-        run: cargo publish --dry-run --locked
+        run: cargo publish --dry-run --locked --allow-dirty
       - name: Create the release crate
-        run: cargo package --locked
+        run: cargo package --locked --allow-dirty
       - name: Calculate package checksum
         shell: bash
         env:
@@ -119,6 +129,17 @@ jobs:
           ref: ${{ format('refs/tags/{0}', github.event.release.tag_name || inputs.release_tag) }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      # Use the workflow revision for the helper when rebuilding an older tag.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: .release-workflow
+      - name: Apply the release version
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          python3 -m unittest discover -s .release-workflow/scripts/tests
+          python3 .release-workflow/scripts/release_version.py "$RELEASE_VERSION"
       - uses: actions/download-artifact@v4
         with:
           name: crate-package
@@ -129,7 +150,7 @@ jobs:
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
           set -euo pipefail
-          cargo package --locked
+          cargo package --locked --allow-dirty
           cmp "target/package/reportstudio-$VERSION.crate" "validated-package/reportstudio-$VERSION.crate"
       - name: Publish the validated version
         shell: bash
@@ -150,7 +171,7 @@ jobs:
               fi
               echo "The identical crate is already published; skipping upload."
               ;;
-            404) cargo publish --locked ;;
+            404) cargo publish --locked --allow-dirty ;;
             *) echo "Unable to check crates.io (HTTP $status)." >&2; exit 1 ;;
           esac
 
